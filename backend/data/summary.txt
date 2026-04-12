@@ -1,0 +1,6 @@
+I am a DevOps Engineer & Cloud Specialist with 5 years of experience in cloud engineering, automation, and software delivery. 
+My expertise includes Cloud-Native Architecture (AWS, Azure, GCP), Kubernetes & Container Orchestration, CI/CD Pipelines, and AI/LLM integration.
+
+Currently, I'm focused on building scalable SaaS platforms and integrating AI-driven solutions such as digital twins and intelligent automation systems.
+
+My background includes designing and deploying cloud-native applications, managing Kubernetes clusters, implementing DevOps pipelines, and working across multi-cloud environments to deliver reliable and efficient systems.

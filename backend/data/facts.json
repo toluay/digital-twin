@@ -1,0 +1,22 @@
+{
+    "full_name": "Tolu Ayantunde",
+    "name": "Tolu",
+    "current_role": "DevOps Engineer & Cloud Specialist",
+    "location": "Derby, United Kingdom",
+    "email": "toluayantunde@gmail.com",
+    "linkedin": "www.linkedin.com/in/ayantundetolu/",
+    "specialties": [
+      "Cloud-Native Architecture (AWS, Azure, GCP)",
+      "Kubernetes & Container Orchestration",
+      "CI/CD Pipelines & DevOps Automation",
+      "AI/LLM Integration and SaaS Development"
+    ],
+    "years_experience": 5,
+    "education": [
+      {
+        "degree": "Master's Degree in information Technology",
+        "institution": "Ladoke Akintola University of Technology",
+        "year": "2017"
+      }
+    ]
+  }
