@@ -273,7 +273,7 @@ data "aws_route53_zone" "root" {
 
 resource "aws_acm_certificate" "site" {
   count                     = var.use_custom_domain ? 1 : 0
-  provider                  = aws.us_east_1
+  provider                  = aws.us_east_2
   domain_name               = var.root_domain
   subject_alternative_names = ["www.${var.root_domain}"]
   validation_method         = "DNS"
@@ -296,7 +296,7 @@ resource "aws_route53_record" "site_validation" {
 
 resource "aws_acm_certificate_validation" "site" {
   count           = var.use_custom_domain ? 1 : 0
-  provider        = aws.us_east_1
+  provider        = aws.us_east_2
   certificate_arn = aws_acm_certificate.site[0].arn
   validation_record_fqdns = [
     for r in aws_route53_record.site_validation : r.fqdn
