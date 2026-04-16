@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
+import requests
 from context import prompt
 
 # Load environment variables
@@ -26,14 +27,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Bedrock client - see Q42 on https://edwarddonner.com/faq if the Region gives you problems
-bedrock_client = boto3.client(
-    service_name="bedrock-runtime", 
-    region_name=os.getenv("DEFAULT_AWS_REGION", "us-east-1")
-)
+# OpenRouter configuration (replacing Bedrock)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Bedrock model selection - see Q42 on https://edwarddonner.com/faq for more
-BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.amazon.nova-2-lite-v1:0")
+# Reuse same variable name for minimal disruption
+BEDROCK_MODEL_ID = os.getenv(
+    "BEDROCK_MODEL_ID",
+    "openai/gpt-4o-mini"
+)
 
 # Memory storage configuration
 USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
@@ -78,7 +79,6 @@ def load_conversation(session_id: str) -> List[Dict]:
                 return []
             raise
     else:
-        # Local file storage
         file_path = os.path.join(MEMORY_DIR, get_memory_path(session_id))
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
@@ -96,72 +96,74 @@ def save_conversation(session_id: str, messages: List[Dict]):
             ContentType="application/json",
         )
     else:
-        # Local file storage
         os.makedirs(MEMORY_DIR, exist_ok=True)
         file_path = os.path.join(MEMORY_DIR, get_memory_path(session_id))
         with open(file_path, "w") as f:
             json.dump(messages, f, indent=2)
 
 
-def call_bedrock(conversation: List[Dict], user_message: str) -> str:
-    """Call AWS Bedrock with conversation history"""
-    
-    # Build messages in Bedrock format
+# 🔁 Replaced Bedrock with OpenRouter
+def call_llm(conversation: List[Dict], user_message: str) -> str:
+    """Call OpenRouter (replacing AWS Bedrock)"""
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Digital Twin App"
+    }
+
     messages = []
-    
-    # Add system prompt as first user message
-    # Or there's a better way to do this - pass in system=[{"text": prompt()}] to the converse call below
+
+    # System prompt
     messages.append({
-        "role": "user", 
-        "content": [{"text": f"System: {prompt()}"}]
+        "role": "system",
+        "content": prompt()
     })
-    
-    # Add conversation history (limit to last 25 exchanges)
+
+    # Conversation history
     for msg in conversation[-50:]:
         messages.append({
             "role": msg["role"],
-            "content": [{"text": msg["content"]}]
+            "content": msg["content"]
         })
-    
-    # Add current user message
+
+    # Current user message
     messages.append({
         "role": "user",
-        "content": [{"text": user_message}]
+        "content": user_message
     })
-    
+
+    body = {
+        "model": BEDROCK_MODEL_ID,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 2000
+    }
+
     try:
-        # Call Bedrock using the converse API
-        response = bedrock_client.converse(
-            modelId=BEDROCK_MODEL_ID,
-            messages=messages,
-            inferenceConfig={
-                "maxTokens": 2000,
-                "temperature": 0.7,
-                "topP": 0.9
-            }
-        )
-        
-        # Extract the response text
-        return response["output"]["message"]["content"][0]["text"]
-        
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'ValidationException':
-            # Handle message format issues
-            print(f"Bedrock validation error: {e}")
-            raise HTTPException(status_code=400, detail="Invalid message format for Bedrock")
-        elif error_code == 'AccessDeniedException':
-            print(f"Bedrock access denied: {e}")
-            raise HTTPException(status_code=403, detail="Access denied to Bedrock model")
-        else:
-            print(f"Bedrock error: {e}")
-            raise HTTPException(status_code=500, detail=f"Bedrock error: {str(e)}")
+        response = requests.post(url, headers=headers, json=body)
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"OpenRouter error: {response.text}"
+            )
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        print(f"LLM error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/")
 async def root():
     return {
-        "message": "AI Digital Twin API (Powered by AWS Bedrock)",
+        "message": "AI Digital Twin API (Powered by OpenRouter)",
         "memory_enabled": True,
         "storage": "S3" if USE_S3 else "local",
         "ai_model": BEDROCK_MODEL_ID
@@ -171,25 +173,22 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {
-        "status": "healthy", 
+        "status": "healthy",
         "use_s3": USE_S3,
-        "bedrock_model": BEDROCK_MODEL_ID
+        "ai_model": BEDROCK_MODEL_ID
     }
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
 
-        # Load conversation history
         conversation = load_conversation(session_id)
 
-        # Call Bedrock for response
-        assistant_response = call_bedrock(conversation, request.message)
+        # 🔁 Changed here
+        assistant_response = call_llm(conversation, request.message)
 
-        # Update conversation history
         conversation.append(
             {"role": "user", "content": request.message, "timestamp": datetime.now().isoformat()}
         )
@@ -201,7 +200,6 @@ async def chat(request: ChatRequest):
             }
         )
 
-        # Save conversation
         save_conversation(session_id, conversation)
 
         return ChatResponse(response=assistant_response, session_id=session_id)
@@ -215,7 +213,6 @@ async def chat(request: ChatRequest):
 
 @app.get("/conversation/{session_id}")
 async def get_conversation(session_id: str):
-    """Retrieve conversation history"""
     try:
         conversation = load_conversation(session_id)
         return {"session_id": session_id, "messages": conversation}
@@ -225,5 +222,4 @@ async def get_conversation(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
